@@ -24,14 +24,14 @@ interface SPContentType {
   Description: string;
 }
 
-const sharepointValidationMapping =
-  'Please select a content type from the SharePoint Content Type drop down';
-const laserficheValidationMapping =
-  'Please select a content type from the Laserfiche Profile dropdown';
-const validationOf = 'Already Mapping exists for this SharePoint content type';
+const mappingValidation =
+  'Please ensure all mappings have a SharePoint Content Type and Laserfiche Profile';
+const validationOf = 'Please ensure all SharePoint Content Types are unique.';
 
 export default function ManageMappingsPage(props: IManageMappingsPageProps) {
-  const [mappingRows, setMappingRows] = useState([]);
+  const [mappingRows, setMappingRows] = useState<ProfileMappingConfiguration[]>(
+    []
+  );
   const [sharePointContentTypes, setSharePointContentTypes] = useState<
     string[]
   >([]);
@@ -40,6 +40,11 @@ export default function ManageMappingsPage(props: IManageMappingsPageProps) {
   >([]);
   const [deleteModal, setDeleteModal] = useState(undefined);
   const [validationMessage, setValidationMessage] = useState(undefined);
+  const [hasChanges, setHasChanges] = useState<boolean>(false);
+  const [originalState, setOriginalState] = useState<{
+    id: string;
+    value: string;
+  }>();
 
   React.useEffect(() => {
     getAllMappingsAsync();
@@ -50,9 +55,12 @@ export default function ManageMappingsPage(props: IManageMappingsPageProps) {
     await getAllLaserficheContentTypesAsync();
     const results: { id: string; mappings: ProfileMappingConfiguration[] } =
       await getManageMappingsAsync();
+    const jsonREsults = JSON.stringify(results.mappings);
+    setOriginalState({ id: results.id, value: jsonREsults });
     if (results != null) {
       if (results.mappings.length > 0) {
         setMappingRows(mappingRows.concat(results.mappings));
+        setValidationMessage(undefined);
       }
     }
   }
@@ -125,309 +133,6 @@ export default function ManageMappingsPage(props: IManageMappingsPageProps) {
     }
   }
 
-  async function createNewMappingAsync(
-    idx: number,
-    rows: ProfileMappingConfiguration[]
-  ) {
-    setValidationMessage(undefined);
-    if (rows[idx].SharePointContentType == 'Select') {
-      setValidationMessage(sharepointValidationMapping);
-    } else if (rows[idx].LaserficheContentType == 'Select') {
-      setValidationMessage(laserficheValidationMapping);
-    } else {
-      const existingMappings: {
-        id: string;
-        mappings: ProfileMappingConfiguration[];
-      } = await getManageMappingsAsync();
-      if (existingMappings != null) {
-        if (existingMappings.mappings.length > 0) {
-          const mappingExists = existingMappings.mappings.find(
-            (mapping) => mapping.id === rows[idx].id
-          );
-          if (mappingExists !== undefined) {
-            await updateExistingMappingAsync(
-              existingMappings.mappings,
-              rows,
-              idx,
-              existingMappings.id
-            );
-          } else {
-            await addNewInExistingMappingAsync(
-              existingMappings.mappings,
-              rows,
-              idx,
-              existingMappings.id
-            );
-          }
-        } else {
-          const restApiUrl = `${getSPListURL(
-            props.context,
-            ADMIN_CONFIGURATION_LIST
-          )}/items(${existingMappings.id})`;
-          const row = [...mappingRows];
-          const newjsonValue = [
-            {
-              id: row[idx].id,
-              SharePointContentType: row[idx].SharePointContentType,
-              LaserficheContentType: row[idx].LaserficheContentType,
-              toggle: true,
-            },
-          ];
-          const jsonObject = JSON.stringify(newjsonValue);
-          const body: string = JSON.stringify({
-            Title: MANAGE_MAPPING,
-            JsonValue: jsonObject,
-          });
-          const options: ISPHttpClientOptions = {
-            headers: {
-              Accept: 'application/json;odata=nometadata',
-              'content-type': 'application/json;odata=nometadata',
-              'odata-version': '',
-              'IF-MATCH': '*',
-              'X-HTTP-Method': 'MERGE',
-            },
-            body: body,
-          };
-          await props.context.spHttpClient.post(
-            restApiUrl,
-            SPHttpClient.configurations.v1,
-            options
-          );
-          rows[idx].toggle = !rows[idx].toggle;
-          setMappingRows(rows);
-        }
-      } else {
-        const restApiUrl = `${getSPListURL(
-          props.context,
-          ADMIN_CONFIGURATION_LIST
-        )}/items`;
-        const newRow = [...mappingRows];
-        const jsonValues = [
-          {
-            id: newRow[idx].id,
-            SharePointContentType: newRow[idx].SharePointContentType,
-            LaserficheContentType: newRow[idx].LaserficheContentType,
-            toggle: true,
-          },
-        ];
-        const jsonObject = JSON.stringify(jsonValues);
-        const body: string = JSON.stringify({
-          Title: MANAGE_MAPPING,
-          JsonValue: jsonObject,
-        });
-        const options: ISPHttpClientOptions = {
-          headers: {
-            Accept: 'application/json;odata=nometadata',
-            'content-type': 'application/json;odata=nometadata',
-            'odata-version': '',
-          },
-          body: body,
-        };
-        await props.context.spHttpClient.post(
-          restApiUrl,
-          SPHttpClient.configurations.v1,
-          options
-        );
-        rows[idx].toggle = !rows[idx].toggle;
-        setMappingRows(rows);
-      }
-    }
-  }
-
-  async function addNewInExistingMappingAsync(
-    jsonValue: ProfileMappingConfiguration[],
-    rows: ProfileMappingConfiguration[],
-    idx: number,
-    itemId: string
-  ) {
-    let exitEntry = false;
-    for (let i = 0; i < jsonValue.length; i++) {
-      if (
-        jsonValue[i].SharePointContentType == rows[idx].SharePointContentType
-      ) {
-        exitEntry = true;
-        break;
-      }
-    }
-    if (exitEntry == false) {
-      const restApiUrl = `${getSPListURL(
-        props.context,
-        ADMIN_CONFIGURATION_LIST
-      )}/items(${itemId})`;
-      const newJsonValue = [
-        ...jsonValue,
-        {
-          id: rows[idx].id,
-          SharePointContentType: rows[idx].SharePointContentType,
-          LaserficheContentType: rows[idx].LaserficheContentType,
-          toggle: true,
-        },
-      ];
-      const jsonObject = JSON.stringify(newJsonValue);
-      const body: string = JSON.stringify({
-        Title: MANAGE_MAPPING,
-        JsonValue: jsonObject,
-      });
-      const options: ISPHttpClientOptions = {
-        headers: {
-          Accept: 'application/json;odata=nometadata',
-          'content-type': 'application/json;odata=nometadata',
-          'odata-version': '',
-          'IF-MATCH': '*',
-          'X-HTTP-Method': 'MERGE',
-        },
-        body: body,
-      };
-      await props.context.spHttpClient.post(
-        restApiUrl,
-        SPHttpClient.configurations.v1,
-        options
-      );
-      rows[idx].toggle = !rows[idx].toggle;
-      setMappingRows(rows);
-      if (jsonValue.length + 1 == rows.length) {
-        setValidationMessage(undefined);
-      }
-    } else {
-      setValidationMessage(validationOf);
-    }
-  }
-
-  async function updateExistingMappingAsync(
-    jsonValue: ProfileMappingConfiguration[],
-    rows: ProfileMappingConfiguration[],
-    idx: number,
-    itemId: string
-  ) {
-    const spContentTypeMatch = jsonValue.find(
-      (mapping) =>
-        mapping.SharePointContentType === rows[idx].SharePointContentType
-    );
-    if (!spContentTypeMatch || spContentTypeMatch.id === rows[idx].id) {
-      const matchingId = jsonValue.findIndex(
-        (mapping) => mapping.id === rows[idx].id
-      );
-      jsonValue[matchingId] = { ...rows[idx] };
-      rows[idx].toggle = !rows[idx].toggle;
-      jsonValue[matchingId].toggle = rows[idx].toggle;
-      const restApiUrl = `${getSPListURL(
-        props.context,
-        ADMIN_CONFIGURATION_LIST
-      )}/items(${itemId})`;
-      const newJsonValue = [...jsonValue];
-      const jsonObject = JSON.stringify(newJsonValue);
-      const body: string = JSON.stringify({
-        Title: MANAGE_MAPPING,
-        JsonValue: jsonObject,
-      });
-      const options: ISPHttpClientOptions = {
-        headers: {
-          Accept: 'application/json;odata=nometadata',
-          'content-type': 'application/json;odata=nometadata',
-          'odata-version': '',
-          'IF-MATCH': '*',
-          'X-HTTP-Method': 'MERGE',
-        },
-        body: body,
-      };
-      await props.context.spHttpClient.post(
-        restApiUrl,
-        SPHttpClient.configurations.v1,
-        options
-      );
-      setMappingRows(rows);
-      if (
-        rows.some(
-          (item: ProfileMappingConfiguration) =>
-            item.SharePointContentType == 'Select'
-        )
-      ) {
-        setValidationMessage(sharepointValidationMapping);
-      } else if (
-        rows.some(
-          (item: ProfileMappingConfiguration) =>
-            item.LaserficheContentType == 'Select'
-        )
-      ) {
-        setValidationMessage(laserficheValidationMapping);
-      } else {
-        setValidationMessage(undefined);
-      }
-    } else {
-      setValidationMessage(validationOf);
-    }
-  }
-
-  async function deleteMappingAsync(
-    rows: ProfileMappingConfiguration[],
-    idx: number
-  ) {
-    const results: { id: string; mappings: ProfileMappingConfiguration[] } =
-      await getManageMappingsAsync();
-    if (results != null) {
-      const itemId = results.id;
-      const mappings = results.mappings;
-      const matchingMappingIndex = mappings.findIndex(
-        (mapping) => mapping.id === rows[idx].id
-      );
-      if (matchingMappingIndex > -1) {
-        mappings.splice(matchingMappingIndex, 1);
-        const restApiUrl = `${getSPListURL(
-          props.context,
-          ADMIN_CONFIGURATION_LIST
-        )}/items(${itemId})`;
-        const newMappings = [...mappings];
-        const jsonObject = JSON.stringify(newMappings);
-        const body: string = JSON.stringify({
-          Title: MANAGE_MAPPING,
-          JsonValue: jsonObject,
-        });
-        const options: ISPHttpClientOptions = {
-          headers: {
-            Accept: 'application/json;odata=nometadata',
-            'content-type': 'application/json;odata=nometadata',
-            'odata-version': '',
-            'IF-MATCH': '*',
-            'X-HTTP-Method': 'MERGE',
-          },
-          body: body,
-        };
-        await props.context.spHttpClient.post(
-          restApiUrl,
-          SPHttpClient.configurations.v1,
-          options
-        );
-        const existingSPContentType = rows.find(
-          (mapping) =>
-            mapping.SharePointContentType === rows[idx].SharePointContentType
-        );
-        if (!existingSPContentType) {
-          setValidationMessage(undefined);
-        } else {
-          setValidationMessage(validationOf);
-        }
-      } else {
-        if (mappings.length + 1 == rows.length) {
-          setValidationMessage(undefined);
-        } else {
-          const selectSPContentType = mappings.find(
-            (mapping) => mapping.SharePointContentType === 'Select'
-          );
-          if (selectSPContentType) {
-            setValidationMessage(sharepointValidationMapping);
-          } else {
-            const selectLfContentType = mappings.find(
-              (mapping) => mapping.LaserficheContentType === 'Select'
-            );
-            if (selectLfContentType) {
-              setValidationMessage(laserficheValidationMapping);
-            }
-          }
-        }
-      }
-    }
-  }
-
   async function getManageMappingsAsync(): Promise<{
     id: string;
     mappings: ProfileMappingConfiguration[];
@@ -460,14 +165,62 @@ export default function ManageMappingsPage(props: IManageMappingsPageProps) {
   }
 
   const addNewMapping = () => {
-    const id = (+new Date() + Math.floor(Math.random() * 999999)).toString(36);
     const item = {
-      id,
       SharePointContentType: 'Select',
       LaserficheContentType: 'Select',
       toggle: false,
     };
     setMappingRows([...mappingRows, item]);
+  };
+
+  const saveAllMappings = async () => {
+    const newJsonValue = [...mappingRows];
+    setValidationMessage(undefined);
+  
+    const spNames = new Set<string>();
+    for (const mapping of newJsonValue) {
+      if (
+        mapping.SharePointContentType === 'Select' ||
+        mapping.LaserficheContentType === 'Select'
+      ) {
+        // TODO should it let you save if you haven't selected anything?
+        setValidationMessage(mappingValidation);
+        return;
+      }
+      spNames.add(mapping.SharePointContentType);
+    }
+    if (spNames.size !== newJsonValue.length) {
+      setValidationMessage(validationOf);
+      return;
+    }
+
+    const restApiUrl = `${getSPListURL(
+      props.context,
+      ADMIN_CONFIGURATION_LIST
+    )}/items(${originalState.id})`;
+    const jsonObject = JSON.stringify(newJsonValue);
+    const body: string = JSON.stringify({
+      Title: MANAGE_MAPPING,
+      JsonValue: jsonObject,
+    });
+    // TODO is it slightly different if it is a completely new list?
+    const options: ISPHttpClientOptions = {
+      headers: {
+        Accept: 'application/json;odata=nometadata',
+        'content-type': 'application/json;odata=nometadata',
+        'odata-version': '',
+        'IF-MATCH': '*',
+        'X-HTTP-Method': 'MERGE',
+      },
+      body: body,
+    };
+    await props.context.spHttpClient.post(
+      restApiUrl,
+      SPHttpClient.configurations.v1,
+      options
+    );
+    setOriginalState({ id: originalState.id, value: jsonObject });
+    setHasChanges(false);
   };
 
   const removeSpecificMapping = (idx: number) => {
@@ -484,161 +237,101 @@ export default function ManageMappingsPage(props: IManageMappingsPageProps) {
 
   function removeRow(id: number) {
     const rows = [...mappingRows];
-    const deleteRows = [...mappingRows];
     rows.splice(id, 1);
     setMappingRows(rows);
-    deleteMappingAsync(deleteRows, id);
+    const newRowsString = JSON.stringify(rows);
+    setHasChanges(originalState.value !== newRowsString);
+    setValidationMessage(undefined);
     setDeleteModal(undefined);
   }
 
-  const editSpecificMapping = (idx: number) => {
-    const rows = [...mappingRows];
-    rows[idx].toggle = !rows[idx].toggle;
-    setMappingRows(rows);
-  };
-
-  const saveSpecificMappingAsync = async (idx: number) => {
-    const rows = [...mappingRows];
-    await createNewMappingAsync(idx, rows);
-  };
-
-  const handleChange = (event: ChangeEvent<HTMLSelectElement>, idx: number) => {
+  const handleSPContentTypeChange = (
+    event: ChangeEvent<HTMLSelectElement>,
+    idx: number
+  ) => {
     const item = {
       id: event.target.id,
       name: event.target.name,
       value: event.target.value,
     };
     const newRows = [...mappingRows];
-    if (item.name === 'SharePointContentType') {
-      newRows[idx].SharePointContentType = item.value;
-    } else if (item.name === 'LaserficheContentType') {
-      newRows[idx].LaserficheContentType = item.value;
-    }
+    newRows[idx].SharePointContentType = item.value;
     setMappingRows(newRows);
+    const newRowsString = JSON.stringify(newRows);
+    setHasChanges(originalState.value !== newRowsString);
+    setValidationMessage(undefined);
+  };
+
+  const handleLFProfileChange = (
+    event: ChangeEvent<HTMLSelectElement>,
+    idx: number
+  ) => {
+    const item = {
+      id: event.target.id,
+      name: event.target.name,
+      value: event.target.value,
+    };
+    const newRows = [...mappingRows];
+    newRows[idx].LaserficheContentType = item.value;
+    setMappingRows(newRows);
+    const newRowsString = JSON.stringify(newRows);
+    setHasChanges(originalState.value !== newRowsString);
+    setValidationMessage(undefined);
   };
 
   function closeModalUp() {
     setDeleteModal(undefined);
   }
 
-  const resetAsync = async () => {
-    setDeleteModal(undefined);
-    await getAllSharePointContentTypesAsync();
-    await getAllLaserficheContentTypesAsync();
-    const results: { id: string; mappings: ProfileMappingConfiguration[] } =
-      await getManageMappingsAsync();
-    if (results != null) {
-      if (results.mappings.length > 0) {
-        setMappingRows(results.mappings);
-      }
-    }
-    setValidationMessage(undefined);
-  };
-
-  const sharePointContentTypesDisplay = sharePointContentTypes.map((contentType) => (
-    <option key={contentType} value={contentType}>
-      {contentType}
-    </option>
-  ));
+  const sharePointContentTypesDisplay = sharePointContentTypes.map(
+    (contentType) => (
+      <option key={contentType} value={contentType}>
+        {contentType}
+      </option>
+    )
+  );
   const lfContentTypesDisplay = laserficheContentTypes.map((contentType) => (
     <option key={contentType} value={contentType}>
       {contentType}
     </option>
   ));
   const renderTableData = mappingRows.map((item, index) => {
-    if (item.toggle) {
-      return (
-        <tr id='addr0' key={index}>
-          <td>
-            <select
-              name='SharePointContentType'
-              disabled
-              className='custom-select'
-              value={mappingRows[index].SharePointContentType}
-              id={mappingRows[index].id}
-              onChange={(e) => handleChange(e, index)}
-            >
-              <option>Select</option>
-              {sharePointContentTypesDisplay}
-            </select>
-          </td>
-          <td>
-            <select
-              name='LaserficheContentType'
-              disabled
-              className='custom-select'
-              value={mappingRows[index].LaserficheContentType}
-              id={mappingRows[index].id}
-              onChange={(e) => handleChange(e, index)}
-            >
-              <option>Select</option>
-              {lfContentTypesDisplay}
-            </select>
-          </td>
-          <td className='text-center'>
-            <a
-              href='javascript:;'
-              className='ml-3'
-              onClick={() => editSpecificMapping(index)}
-            >
-              <span className='material-icons'>edit</span>
-            </a>
-            <a
-              href='javascript:;'
-              className='ml-3'
-              onClick={() => removeSpecificMapping(index)}
-            >
-              <span className='material-icons'>delete</span>
-            </a>
-          </td>
-        </tr>
-      );
-    } else {
-      return (
-        <tr id='addr0' key={index}>
-          <td>
-            <select
-              name='SharePointContentType'
-              className='custom-select'
-              value={mappingRows[index].SharePointContentType}
-              id={mappingRows[index].id}
-              onChange={(e) => handleChange(e, index)}
-            >
-              <option>Select</option>
-              {sharePointContentTypesDisplay}
-            </select>
-          </td>
-          <td>
-            <select
-              name='LaserficheContentType'
-              className='custom-select'
-              value={mappingRows[index].LaserficheContentType}
-              id={mappingRows[index].id}
-              onChange={(e) => handleChange(e, index)}
-            >
-              <option>Select</option>
-              {lfContentTypesDisplay}
-            </select>
-          </td>
-          <td className='text-center'>
-            <a
-              href='javascript:;'
-              className='ml-3'
-              onClick={() => saveSpecificMappingAsync(index)}
-            >
-              <span className='material-icons'>save</span>
-            </a>
-            <a
-              href='javascript:;'
-              className='ml-3'
-              onClick={() => removeSpecificMapping(index)}
-            >
-              <span className='material-icons'>delete</span>
-            </a>
-          </td>
-        </tr>
-      );
-    }
+    return (
+      <tr id='addr0' key={`${item.SharePointContentType}${item.LaserficheContentType}`}>
+        <td>
+          <select
+            name='SharePointContentType'
+            className='custom-select'
+            defaultValue={mappingRows[index].SharePointContentType}
+            onChange={(e) => handleSPContentTypeChange(e, index)}
+          >
+            <option>Select</option>
+            {sharePointContentTypesDisplay}
+          </select>
+          {/* have error message here */}
+        </td>
+        <td>
+          <select
+            name='LaserficheContentType'
+            className='custom-select'
+            defaultValue={mappingRows[index].LaserficheContentType}
+            onChange={(e) => handleLFProfileChange(e, index)}
+          >
+            <option>Select</option>
+            {lfContentTypesDisplay}
+          </select>
+        </td>
+        <td className='text-center'>
+          <a
+            href='javascript:;'
+            className='ml-3'
+            onClick={() => removeSpecificMapping(index)}
+          >
+            <span className='material-icons'>delete</span>
+          </a>
+        </td>
+      </tr>
+    );
   });
   const viewSharePointContentTypes =
     props.context.pageContext.web.absoluteUrl + '/_layouts/15/mngctype.aspx';
@@ -675,11 +368,17 @@ export default function ManageMappingsPage(props: IManageMappingsPageProps) {
                     <th className='text-center' style={{ width: '45%' }}>
                       Laserfiche Profile
                     </th>
-                    <th className='text-center'>Action</th>
+                    <th className='text-center' />
                   </tr>
                 </thead>
                 <tbody>{renderTableData}</tbody>
               </table>
+              <button
+                className='btn btn-primary pl-5 pr-5 float-right'
+                onClick={addNewMapping}
+              >
+                Add
+              </button>
             </div>
 
             {validationMessage && (
@@ -688,20 +387,13 @@ export default function ManageMappingsPage(props: IManageMappingsPageProps) {
               </div>
             )}
             <div className='card-footer bg-transparent'>
-              <a
+              <button
                 className='btn btn-primary pl-5 pr-5 float-right'
-                style={{ marginLeft: '10px' }}
-                onClick={resetAsync}
+                disabled={!hasChanges}
+                onClick={saveAllMappings}
               >
-                Reset
-              </a>
-              <a
-                href='javascript:;'
-                className='btn btn-primary pl-5 pr-5 float-right'
-                onClick={addNewMapping}
-              >
-                Add
-              </a>
+                Save
+              </button>
             </div>
           </div>
         </div>

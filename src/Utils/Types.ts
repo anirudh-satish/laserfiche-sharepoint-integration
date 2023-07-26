@@ -14,8 +14,6 @@ export interface ISPDocumentData {
 }
 
 export interface ProfileMappingConfiguration {
-  id: string;
-  SharePointContentType: string;
-  LaserficheContentType: string;
-  toggle: boolean;
+  SharePointContentType?: string;
+  LaserficheContentType?: string;
 }
