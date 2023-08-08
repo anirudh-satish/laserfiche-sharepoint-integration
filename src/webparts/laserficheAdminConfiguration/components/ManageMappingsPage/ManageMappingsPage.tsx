@@ -53,15 +53,18 @@ export default function ManageMappingsPage(props: IManageMappingsPageProps) {
   async function getAllMappingsAsync() {
     await getAllSharePointContentTypesAsync();
     await getAllLaserficheContentTypesAsync();
-    const results: { id: string; mappings: ProfileMappingConfiguration[] } =
-      await getManageMappingsAsync();
-    const jsonREsults = JSON.stringify(results.mappings);
-    setOriginalState({ id: results.id, value: jsonREsults });
-    if (results != null) {
-      if (results.mappings.length > 0) {
-        setMappingRows(mappingRows.concat(results.mappings));
-        setValidationMessage(undefined);
-      }
+    const results:
+      | { id: string; mappings: ProfileMappingConfiguration[] }
+      | undefined = await getManageMappingsAsync();
+    if (results) {
+      const jsonREsults = JSON.stringify(results.mappings ?? []);
+      setOriginalState({ id: results.id, value: jsonREsults });
+    } else {
+      setOriginalState({ id: undefined, value: '[]' });
+    }
+    if (results && results.mappings.length > 0) {
+      setMappingRows(mappingRows.concat(results.mappings));
+      setValidationMessage(undefined);
     }
   }
 
@@ -157,7 +160,7 @@ export default function ManageMappingsPage(props: IManageMappingsPageProps) {
         }
         return { id: array[0].Id, mappings: JSON.parse(array[0].JsonValue) };
       } else {
-        return null;
+        return undefined;
       }
     } catch (error) {
       console.log('error occurred' + error);
@@ -176,7 +179,7 @@ export default function ManageMappingsPage(props: IManageMappingsPageProps) {
   const saveAllMappings = async () => {
     const newJsonValue = [...mappingRows];
     setValidationMessage(undefined);
-  
+
     const spNames = new Set<string>();
     for (const mapping of newJsonValue) {
       if (
@@ -194,31 +197,52 @@ export default function ManageMappingsPage(props: IManageMappingsPageProps) {
       return;
     }
 
-    const restApiUrl = `${getSPListURL(
-      props.context,
-      ADMIN_CONFIGURATION_LIST
-    )}/items(${originalState.id})`;
     const jsonObject = JSON.stringify(newJsonValue);
     const body: string = JSON.stringify({
       Title: MANAGE_MAPPING,
       JsonValue: jsonObject,
     });
-    // TODO is it slightly different if it is a completely new list?
-    const options: ISPHttpClientOptions = {
-      headers: {
-        Accept: 'application/json;odata=nometadata',
-        'content-type': 'application/json;odata=nometadata',
-        'odata-version': '',
-        'IF-MATCH': '*',
-        'X-HTTP-Method': 'MERGE',
-      },
-      body: body,
-    };
-    await props.context.spHttpClient.post(
-      restApiUrl,
-      SPHttpClient.configurations.v1,
-      options
-    );
+    if (originalState.id) {
+      const restApiUrl = `${getSPListURL(
+        props.context,
+        ADMIN_CONFIGURATION_LIST
+      )}/items(${originalState.id})`;
+      const options: ISPHttpClientOptions = {
+        headers: {
+          Accept: 'application/json;odata=nometadata',
+          'content-type': 'application/json;odata=nometadata',
+          'odata-version': '',
+          'IF-MATCH': '*',
+          'X-HTTP-Method': 'MERGE',
+        },
+        body,
+      };
+      await props.context.spHttpClient.post(
+        restApiUrl,
+        SPHttpClient.configurations.v1,
+        options
+      );
+    } else {
+      // create new
+      const restApiUrl = `${getSPListURL(
+        props.context,
+        ADMIN_CONFIGURATION_LIST
+      )}/items`;
+      const options: ISPHttpClientOptions = {
+        headers: {
+          Accept: 'application/json;odata=nometadata',
+          'content-type': 'application/json;odata=nometadata',
+          'odata-version': '',
+        },
+        body,
+      };
+      await props.context.spHttpClient.post(
+        restApiUrl,
+        SPHttpClient.configurations.v1,
+        options
+      );
+    }
+
     setOriginalState({ id: originalState.id, value: jsonObject });
     setHasChanges(false);
   };
@@ -297,7 +321,10 @@ export default function ManageMappingsPage(props: IManageMappingsPageProps) {
   ));
   const renderTableData = mappingRows.map((item, index) => {
     return (
-      <tr id='addr0' key={`${item.SharePointContentType}${item.LaserficheContentType}`}>
+      <tr
+        id='addr0'
+        key={`${item.SharePointContentType}${item.LaserficheContentType}`}
+      >
         <td>
           <select
             name='SharePointContentType'
