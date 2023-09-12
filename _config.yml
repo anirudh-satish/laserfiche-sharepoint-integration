@@ -30,7 +30,7 @@ exclude:
  # theme test code
    - fixtures/
 
-source: "./jekyll_pages"
+source: "./docs"
 search_enabled: true
 search:
   # Split pages into sections that can be searched individually
